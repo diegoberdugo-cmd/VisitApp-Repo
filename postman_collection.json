@@ -1,0 +1,620 @@
+{
+  "info": {
+    "name": "VisitAPP Backend",
+    "description": "API REST - Sistema de Control de Acceso de Visitantes - Master Solution S.A.S.\n\nBase URL: http://localhost:3000/api/v1\n\nCobertura de Historias de Usuario:\n- HU-03: Registro visitante + selección jerárquica anfitrión por área\n- HU-04: Registro grupal (acompañantes)\n- HU-05: Confirmación y código único\n- HU-06: Finalizar visita grupal por código\n- HU-07: Salida individual por código + cédula\n- HU-08: Validación salidas/visitas finalizadas\n- HU-09: Autenticación administradores\n- HU-10: Consultas y reportes por fechas\n\nUsuarios de prueba:\n- Admin: admin@mastersolution.com / Admin123!\n- Vigilante: vigilante@mastersolution.com / Vigilante123!",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "codigo_visita",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "description": "Endpoints de verificación de estado del servidor.",
+      "item": [
+        {
+          "name": "GET /health",
+          "description": "Verifica el estado del servidor. Retorna status, nombre del servicio y versión.\n\nNo requiere autenticación.\nNo recibe parámetros.\n\nRespuesta: { status: 'ok', service: 'VisitAPP API', version: '1.0.0' }",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Health check del servidor. Útil para verificar que la API está funcionando."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Autenticación y gestión de sesiones.\n\nEl login acepta email o cédula como identificador. Retorna un token JWT válido por 8 horas.\n\nEl login también genera automáticamente una visita de ingreso operativo para personal interno (HU-09).",
+      "item": [
+        {
+          "name": "POST /auth/login (Admin)",
+          "description": "Inicia sesión como Administrador. Retorna token JWT y datos del usuario (HU-09).\n\nEl test automático guarda el token en la variable de entorno {{token}} para usarlo en requests posteriores.\n\nParámetros de entrada (JSON body):\n- email (string, requerido): Email o cédula del usuario\n- password (string, requerido): Contraseña del usuario\n\nRespuesta exitosa: { token: 'eyJhbG...', usuario: { id, nombre, email, rol }, registro_ingreso: { codigo_visita, codigo_individual } }",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token) {",
+                  "    pm.environment.set('token', jsonData.token);",
+                  "    pm.environment.set('codigo_visita', jsonData.registro_ingreso.codigo_visita);",
+                  "    console.log('Token guardado en variable de entorno');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mastersolution.com\",\n  \"password\": \"Admin123!\"\n}"
+            },
+            "description": "Login como Administrador. Usa credenciales de prueba."
+          }
+        },
+        {
+          "name": "POST /auth/login (Vigilante)",
+          "description": "Inicia sesión como Vigilante. Retorna token JWT y datos del usuario (HU-09).\n\nEl test automático guarda el token en la variable de entorno {{token}} para usarlo en requests posteriores.\n\nParámetros de entrada (JSON body):\n- email (string, requerido): Email o cédula del usuario\n- password (string, requerido): Contraseña del usuario\n\nRespuesta exitosa: { token: 'eyJhbG...', usuario: { id, nombre, email, rol }, registro_ingreso: { codigo_visita, codigo_individual } }",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token) {",
+                  "    pm.environment.set('token', jsonData.token);",
+                  "    pm.environment.set('codigo_visita', jsonData.registro_ingreso.codigo_visita);",
+                  "    console.log('Token guardado en variable de entorno');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"vigilante@mastersolution.com\",\n  \"password\": \"Vigilante123!\"\n}"
+            },
+            "description": "Login como Vigilante. Usa credenciales de prueba."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Visits (Public) - HU-03/04/05",
+      "description": "Endpoints públicos para registro y consulta de visitas.\n\nNo requieren autenticación. El código de visita (ej: VA-583921) se genera automáticamente al registrar un visitante.\n\nCubre: HU-03 (anfitrión por área), HU-04 (registro grupal), HU-05 (código único).",
+      "item": [
+        {
+          "name": "GET /visits/areas",
+          "description": "Lista todas las áreas activas disponibles para registro de visitas.\n\nNo recibe parámetros.\n\nRespuesta: Array de { id: number, nombre: string }\n\nPermite al visitante seleccionar el área antes de elegir al funcionario anfitrión (selector jerárquico HU-03).",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/visits/areas",
+            "description": "Obtiene la lista de áreas activas. Paso 1 del selector jerárquico."
+          }
+        },
+        {
+          "name": "GET /visits/areas/:areaId/funcionarios",
+          "description": "lista los funcionarios activos de un área determinada para la selección del anfitrión (HU-03).\n\nParámetros de entrada:\n- areaId (path param, requerido): ID del área (obtener de GET /visits/areas)\n\nRespuesta: Array de { id: number, nombre_completo: string, cedula: string }\n\nSe usa como selector jerárquico: primero elige el área, luego el funcionario de esa área.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/visits/areas/2/funcionarios",
+              "host": ["{{baseUrl}}"],
+              "path": ["visits", "areas", "2", "funcionarios"]
+            },
+            "description": "Lista funcionarios de un área. Paso 2 del selector jerárquico."
+          }
+        },
+        {
+          "name": "POST /visits/visitor",
+          "description": "Registra una visita de un visitante externo. Genera código único (VA-XXXXXX) y registra movimiento de ENTRADA (HU-05).\n\nParámetros de entrada (JSON body):\n- nombre_completo (string, requerido): Nombre completo del visitante\n- cedula (string, requerido): Número de cédula\n- telefono (string, requerido): Teléfono\n- contacto_emergencia (string, OPCIONAL): Contacto de emergencia\n- area_id (number, requerido): ID del área a visitar\n- funcionario_id (number, OPCIONAL): ID del funcionario anfitrión (HU-03)\n- motivo_visita (string, requerido): Motivo de la visita\n- eps (string, opcional): EPS\n- arl (string, opcional): ARL\n- ingresa_vehiculo (boolean, opcional, default: false): Si ingresa con vehículo\n- placa_vehiculo (string, requerido si ingresa_vehiculo=true): Placa del vehículo\n- acompanantes (array, OPCIONAL, default: []): Lista de acompañantes (HU-04)\n  - nombre_completo (string, requerido)\n  - cedula (string, requerido)\n  - telefono (string, opcional)\n\nRespuesta: { codigo_visita: 'VA-583921', visita_id, area, integrantes: [...], estado_general: 'ACTIVA' }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/visits/visitor",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre_completo\": \"Carlos López\",\n  \"cedula\": \"1234567890\",\n  \"telefono\": \"3001112233\",\n  \"area_id\": 1,\n  \"funcionario_id\": 1,\n  \"motivo_visita\": \"Reunión comercial\",\n  \"ingresa_vehiculo\": false,\n  \"acompanantes\": [\n    {\n      \"nombre_completo\": \"Laura López\",\n      \"cedula\": \"0987654321\"\n    }\n  ]\n}"
+            },
+            "description": "Registra visitante con funcionario anfitrión y acompañantes (HU-03 + HU-04)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.codigo_visita) {",
+                  "    pm.environment.set('codigo_visita', jsonData.codigo_visita);",
+                  "    console.log('Código de visita guardado: ' + jsonData.codigo_visita);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /visits/visitor (con vehículo)",
+          "description": "Registra un visitante que ingresa con vehículo propio. Requiere placa del vehículo (HU-03).\n\nParámetros de entrada (JSON body):\n- nombre_completo (string, requerido)\n- cedula (string, requerido)\n- telefono (string, requerido)\n- area_id (number, requerido)\n- motivo_visita (string, requerido)\n- ingresa_vehiculo (boolean, requerido): true para registrar vehículo\n- placa_vehiculo (string, requerido): Placa (obligatorio si ingresa_vehiculo=true)\n- acompanantes (array, opcional)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/visits/visitor",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre_completo\": \"Pedro Gómez\",\n  \"cedula\": \"1122334455\",\n  \"telefono\": \"3005556677\",\n  \"area_id\": 2,\n  \"motivo_visita\": \"Entrega de equipo\",\n  \"ingresa_vehiculo\": true,\n  \"placa_vehiculo\": \"ABC123\",\n  \"acompanantes\": []\n}"
+            },
+            "description": "Registra un visitante con vehículo propio."
+          }
+        },
+        {
+          "name": "POST /visits/verify-code",
+          "description": "Verifica un código de visita y retorna los datos de la visita junto con todos los integrantes registrados (HU-05).\n\nEl test automático guarda el codigo_visita en la variable de entorno {{codigo_visita}}.\n\nParámetros de entrada (JSON body):\n- codigo_visita (string, requerido): Código de la visita (ej: VA-583921)\n\nRespuesta: { codigo_visita, estado_general, area, motivo_visita, integrantes: [...] }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/visits/verify-code",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo_visita\": \"{{codigo_visita}}\"\n}"
+            },
+            "description": "Verifica código de visita y retorna detalles + integrantes."
+          }
+        },
+        {
+          "name": "GET /visits/funcionario/:cedula",
+          "description": "Consulta un funcionario interno por su cédula. Retorna datos del funcionario y sus acompañantes autorizados.\n\nParámetros de entrada:\n- cedula (path param, requerido): Número de cédula del funcionario\n\nRespuesta: { funcionario: { id, nombre_completo, cedula, cargo, area }, acompanantes_autorizados: [...] }",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/visits/funcionario/2000000001",
+              "host": ["{{baseUrl}}"],
+              "path": ["visits", "funcionario", "2000000001"]
+            },
+            "description": "Consulta funcionario por cédula y retorna acompañantes autorizados."
+          }
+        },
+        {
+          "name": "POST /visits/funcionario",
+          "description": "Registra el ingreso de un funcionario interno con sus acompañantes autorizados.\n\nParámetros de entrada (JSON body):\n- cedula (string, requerido): Cédula del funcionario\n- motivo_visita (string, opcional, default: 'Ingreso funcionario'): Motivo del ingreso\n- acompanantes_ids (array de number, opcional, default: []): IDs de acompañantes autorizados a incluir\n\nRespuesta: { codigo_visita: 'VA-XXXXXX', visita_id, integrantes, estado_general: 'ACTIVA' }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/visits/funcionario",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cedula\": \"2000000001\",\n  \"motivo_visita\": \"Ingreso laboral\",\n  \"acompanantes_ids\": [1]\n}"
+            },
+            "description": "Registra ingreso de funcionario interno."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Movements (Public) - HU-06/07/08",
+      "description": "Endpoints para gestión de movimientos de entrada/salida de integrantes de una visita.\n\nCubre: HU-06 (finalizar visita grupal), HU-07 (salida individual por cédula), HU-08 (validación de salidas).\n\nLos movimientos controlan el estado de cada integrante: DENTRO, SALIDA_TEMPORAL, SALIDA_DEFINITIVA.",
+      "item": [
+        {
+          "name": "POST /movements/finalize (HU-06)",
+          "description": "FINALIZA una visita completa: registra salida definitiva de TODOS los integrantes que están DENTRO. Solo con el código de visita (HU-06, salida grupal).\n\nParámetros de entrada (JSON body):\n- codigo_visita (string, requerido): Código de la visita (ej: VA-583921)\n- observacion (string, opcional): Observación sobre la salida masiva\n\nRespuesta exitosa: { codigo_visita, integrantes_salieron: number, integrantes: [...], estado_general: 'FINALIZADA' }\n\nLógica: identifica todos los DENTRO, registra SALIDA_DEFINITIVA para cada uno y la visita pasa a FINALIZADA.",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/movements/finalize",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo_visita\": \"{{codigo_visita}}\",\n  \"observacion\": \"Visita finalizada por grupo\"\n}"
+            },
+            "description": "Finaliza visita grupal con salida masiva por código (HU-06)."
+          }
+        },
+        {
+          "name": "POST /movements/exit/by-code (HU-07)",
+          "description": "Registra la salida individual de un integrante buscándolo por código de visita + cédula (HU-07).\n\nParámetros de entrada (JSON body):\n- codigo_visita (string, requerido): Código de la visita\n- cedula (string, requerido): Cédula del integrante que sale\n- observacion (string, opcional): Observación sobre la salida\n\nRespuesta exitosa: { integrante_id, codigo_individual, estado_actual: 'SALIDA_DEFINITIVA', codigo_visita, estado_general }\n\nLógica de estado general:\n- Si QUEDAN integrantes DENTRO → visita PARCIAL\n- Si NO queda ninguno → visita FINALIZADA",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/movements/exit/by-code",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo_visita\": \"{{codigo_visita}}\",\n  \"cedula\": \"1234567890\",\n  \"observacion\": \"Sale antes del grupo\"\n}"
+            },
+            "description": "Salida individual por código + cédula (HU-07)."
+          }
+        },
+        {
+          "name": "POST /movements/exit",
+          "description": "Registra la salida de un integrante por ID (temporal o definitiva).\n\nParámetros de entrada (JSON body):\n- integrante_id (number, requerido): ID del integrante que sale\n- tipo_salida (string enum, requerido): 'TEMPORAL' o 'DEFINITIVA'\n  - TEMPORAL: El integrante puede reingresar después\n  - DEFINITIVA: Se cierra el registro del integrante\n\nRespuesta: { integrante_id, codigo_individual, estado_actual, codigo_visita, estado_general }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/movements/exit",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integrante_id\": 1,\n  \"tipo_salida\": \"TEMPORAL\"\n}"
+            },
+            "description": "Registra salida temporal o definitiva por ID."
+          }
+        },
+        {
+          "name": "POST /movements/re-entry",
+          "description": "Registra el reingreso de un integrante que tenía salida temporal. Solo funciona si el integrante tiene estado SALIDA_TEMPORAL.\n\nParámetros de entrada (JSON body):\n- codigo_visita (string, requerido): Código de la visita\n- integrante_id (number, requerido): ID del integrante que reingresa\n\nRespuesta: { mensaje: 'Reingreso registrado' }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/movements/re-entry",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo_visita\": \"{{codigo_visita}}\",\n  \"integrante_id\": 1\n}"
+            },
+            "description": "Registra reingreso de un integrante con salida temporal."
+          }
+        },
+        {
+          "name": "HU-08: Probar salida bloqueada",
+          "description": "Escenario de validación HU-08: NO funciona como petición, es para verificar que el sistema bloquea operaciones inválidas.\n\n1. Intentar salida en visita FINALIZADA → error 422 'La visita ya está finalizada'\n2. Intentar salida individual con cédula que ya tiene SALIDA_DEFINITIVA → error 400 'La persona no está en estado DENTRO'\n3. Intentar salida con cédula que no pertenece a la visita → error 404",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/movements/exit/by-code",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codigo_visita\": \"{{codigo_visita}}\",\n  \"cedula\": \"9999999999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ejemplo para probar errores de validación (cédula no válida)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Guard (Auth Required)",
+      "description": "Endpoints para el rol Vigilante. Requieren autenticación JWT con rol VIGILANTE o ADMINISTRADOR.\n\nUsa el token generado en POST /auth/login.",
+      "item": [
+        {
+          "name": "GET /guard/active-visits",
+          "description": "Lista todas las visitas activas (estado ACTIVA o PARCIAL) con sus integrantes y resumen de conteo.\n\nRequiere: Token JWT (VIGILANTE o ADMINISTRADOR)\nNo recibe parámetros.\n\nRespuesta: Array de visitas con integrantes y resumen (dentro, fuera_temporal, fuera_definitiva).",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/guard/active-visits",
+            "description": "Obtiene la lista de visitas activas para el vigilante."
+          }
+        },
+        {
+          "name": "GET /guard/search?query=",
+          "description": "Busca visitas por código, nombre, cédula o placa. Filtra solo visitas ACTIVAS o PARCIALES.\n\nRequiere: Token JWT (VIGILANTE o ADMINISTRADOR)\n\nParámetros de query:\n- query (string, opcional): Término de búsqueda general (busca en código, nombre, cédula y placa)\n- cedula (string, opcional): Filtra por cédula específica\n- placa (string, opcional): Filtra por placa específica\n\nNota: Los filtros se combinan con AND.\n\nRespuesta: Array de visitas que coinciden con la búsqueda.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/guard/search?query=1234567890",
+              "host": ["{{baseUrl}}"],
+              "path": ["guard", "search"],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "1234567890"
+                }
+              ]
+            },
+            "description": "Búsqueda general por código, nombre, cédula o placa."
+          }
+        },
+        {
+          "name": "GET /guard/search?cedula=",
+          "description": "Busca visitas filtrando por cédula específica del visitante.\n\nRequiere: Token JWT (VIGILANTE o ADMINISTRADOR)\n\nParámetros de query:\n- cedula (string): Número de cédula a buscar\n\nRespuesta: Array de visitas que coinciden con la cédula.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/guard/search?cedula=1234567890",
+              "host": ["{{baseUrl}}"],
+              "path": ["guard", "search"],
+              "query": [
+                {
+                  "key": "cedula",
+                  "value": "1234567890"
+                }
+              ]
+            },
+            "description": "Búsqueda por cédula específica."
+          }
+        },
+        {
+          "name": "GET /guard/search?placa=",
+          "description": "Busca visitas filtrando por placa de vehículo.\n\nRequiere: Token JWT (VIGILANTE o ADMINISTRADOR)\n\nParámetros de query:\n- placa (string): Placa del vehículo a buscar\n\nRespuesta: Array de visitas que coinciden con la placa.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/guard/search?placa=ABC123",
+              "host": ["{{baseUrl}}"],
+              "path": ["guard", "search"],
+              "query": [
+                {
+                  "key": "placa",
+                  "value": "ABC123"
+                }
+              ]
+            },
+            "description": "Búsqueda por placa de vehículo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (Auth Required) - HU-09/10",
+      "description": "Endpoints de administración. Requieren autenticación JWT con rol ADMINISTRADOR.\n\nCubre: HU-09 (autenticación admin), HU-10 (consultas y reportería por fechas).\n\nGestión de usuarios, áreas y logs de auditoría del sistema.",
+      "item": [
+        {
+          "name": "GET /admin/audit-logs (HU-10)",
+          "description": "Obtiene el historial de movimientos del sistema con paginación y filtros de fecha (HU-10).\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de query:\n- page (number, opcional, default: 1): Número de página\n- limit (number, opcional, default: 20, max: 100): Registros por página\n- desde (string, opcional): Fecha/hora inicial (formato: ISO 8601, ej: 2026-09-01 00:00:00)\n- hasta (string, opcional): Fecha/hora final (formato: ISO 8601)\n\nRespuesta: { data: [...], pagination: { page, limit, total, totalPages } }",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "audit-logs"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Historial de movimientos con paginación (HU-10)."
+          }
+        },
+        {
+          "name": "GET /admin/report (HU-10)",
+          "description": "EXPORTA reporte CSV de todos los movimientos filtrado por intervalo de fechas (HU-10). Descarga un archivo descargable.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de query:\n- desde (string, opcional): Fecha inicial (ej: 2026-09-01 00:00:00)\n- hasta (string, opcional): Fecha final (ej: 2026-09-30 23:59:59)\n\nRespuesta: Archivo CSV descargable con header:\ncodigo_visita, codigo_individual, nombre, cedula, tipo_persona, estado, area, movimiento, fecha_hora, registrado_por\n\nIncluye BOM UTF-8 para compatibilidad con Excel.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/report?desde=2026-09-01%2000:00:00&hasta=2026-09-30%2023:59:59",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "report"],
+              "query": [
+                {
+                  "key": "desde",
+                  "value": "2026-09-01 00:00:00"
+                },
+                {
+                  "key": "hasta",
+                  "value": "2026-09-30 23:59:59"
+                }
+              ]
+            },
+            "description": "Exporta reporte CSV por intervalo de fechas (HU-10)."
+          }
+        },
+        {
+          "name": "GET /admin/roles",
+          "description": "Lista todos los roles disponibles en el sistema.\n\nRequiere: Token JWT (ADMINISTRADOR)\nNo recibe parámetros.\n\nRespuesta: Array de { id, nombre, descripcion }",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/roles",
+            "description": "Lista de roles del sistema (ADMINISTRADOR, VIGILANTE)."
+          }
+        },
+        {
+          "name": "GET /admin/users",
+          "description": "Lista todos los usuarios internos del sistema.\n\nRequiere: Token JWT (ADMINISTRADOR)\nNo recibe parámetros.\n\nRespuesta: Array de usuarios con id, nombre_completo, cedula, email, estado, rol, creado_en.",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/users",
+            "description": "Lista todos los usuarios del sistema."
+          }
+        },
+        {
+          "name": "POST /admin/users",
+          "description": "Crea un nuevo usuario interno en el sistema.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada (JSON body):\n- nombre_completo (string, requerido): Nombre completo del usuario\n- cedula (string, requerido): Número de cédula (debe ser único)\n- email (string, requerido): Email válido (debe ser único)\n- password (string, requerido, min 6 caracteres): Contraseña del usuario\n- rol (string enum, requerido): 'ADMINISTRADOR' o 'VIGILANTE'\n\nRespuesta exitosa: { usuario: { id, nombre_completo, cedula, email, rol, estado } }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/users",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre_completo\": \"Nuevo Vigilante\",\n  \"cedula\": \"9988776655\",\n  \"email\": \"vigilante2@mastersolution.com\",\n  \"password\": \"Vigilante123!\",\n  \"rol\": \"VIGILANTE\"\n}"
+            },
+            "description": "Crea un nuevo usuario interno."
+          }
+        },
+        {
+          "name": "PUT /admin/users/:id",
+          "description": "Actualiza los datos de un usuario existente. Todos los campos son opcionales, al menos uno es requerido.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada:\n- id (path param, requerido): ID del usuario a actualizar\n- JSON body (todos opcionales, al menos 1 requerido):\n  - nombre_completo (string): Nombre completo\n  - email (string): Email válido\n  - password (string, min 6): Nueva contraseña\n  - rol (string enum): 'ADMINISTRADOR' o 'VIGILANTE'\n  - estado (boolean): true para activar, false para desactivar\n\nRespuesta: { usuario actualizado }",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/3",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", "3"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre_completo\": \"Vigilante Actualizado\"\n}"
+            },
+            "description": "Actualiza datos de un usuario existente."
+          }
+        },
+        {
+          "name": "DELETE /admin/users/:id",
+          "description": "Desactiva (soft delete) un usuario del sistema. No elimina físicamente, solo cambia estado a inactivo.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada:\n- id (path param, requerido): ID del usuario a desactivar\n\nRespuesta: { message: 'Usuario desactivado' }",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/3",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", "3"]
+            },
+            "description": "Desactiva un usuario (soft delete)."
+          }
+        },
+        {
+          "name": "GET /admin/areas",
+          "description": "Lista todas las áreas del sistema (activas e inactivas).\n\nRequiere: Token JWT (ADMINISTRADOR)\nNo recibe parámetros.\n\nRespuesta: Array de { id, nombre, estado, creado_en }",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/areas",
+            "description": "Lista todas las áreas (activas e inactivas)."
+          }
+        },
+        {
+          "name": "POST /admin/areas",
+          "description": "Crea una nueva área en el sistema.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada (JSON body):\n- nombre (string, requerido): Nombre del área (debe ser único)\n\nRespuesta exitosa: { area: { id, nombre, estado, creado_en } }",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/areas",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Nueva Área\"\n}"
+            },
+            "description": "Crea una nueva área."
+          }
+        },
+        {
+          "name": "PUT /admin/areas/:id",
+          "description": "Actualiza el nombre o estado de un área existente.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada:\n- id (path param, requerido): ID del área a actualizar\n- JSON body (todos opcionales):\n  - nombre (string): Nuevo nombre del área\n  - estado (boolean): true para activar, false para desactivar\n\nRespuesta: { area actualizada }",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/admin/areas/6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "areas", "6"]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Área Renombrada\"\n}"
+            },
+            "description": "Actualiza nombre o estado de un área."
+          }
+        },
+        {
+          "name": "DELETE /admin/areas/:id",
+          "description": "Desactiva (soft delete) un área del sistema. No elimina físicamente.\n\nRequiere: Token JWT (ADMINISTRADOR)\n\nParámetros de entrada:\n- id (path param, requerido): ID del área a desactivar\n\nRespuesta: { message: 'Area desactivada' }",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/areas/6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "areas", "6"]
+            },
+            "description": "Desactiva un área (soft delete)."
+          }
+        }
+      ]
+    }
+  ]
+}
